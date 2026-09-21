@@ -1,17 +1,17 @@
-from sklearn.ensemble import IsolationForest
 import time
 import threading
 import numpy as np
 from flask import Flask, jsonify, request
 from flask_cors import CORS
+from sklearn.ensemble import IsolationForest
 
+# Initialize Flask API Server with Cross-Origin Resource Sharing (CORS) enabled
 app = Flask(__name__)
 CORS(app)
 
 # ==========================================
 # 1. GLOBAL STATE & ATTACK SIMULATOR STATE
 # ==========================================
-# The virtual target state. True = Benign Cryptographic loops, False = Trojan Triggered
 is_trojan_active = False
 current_tick = 0
 
@@ -25,12 +25,12 @@ shared_telemetry = {
 anomaly_detector = IsolationForest(contamination=0.01, random_state=42)
 
 # ==========================================
-# 2. VIRTUAL SENSOR GENERATOR
+# 2. VIRTUAL SENSOR GENERATOR (ScienceDB Profiles)
 # ==========================================
 
 
 def sample_virtual_sensors():
-    """Generates synthetic telemetry based on the ScienceDB profiles."""
+    """Generates synthetic telemetry based on ScienceDB structural profiles."""
     global is_trojan_active
 
     if not is_trojan_active:
@@ -38,7 +38,7 @@ def sample_virtual_sensors():
         em_voltage = np.random.normal(1.65, 0.015)
         current_ma = np.random.normal(42.0, 0.4)
     else:
-        # Malicious circuit activity spike
+        # Malicious circuit activity spike when Trojan wakes up
         em_voltage = np.random.normal(2.45, 0.12)
         current_ma = np.random.normal(78.5, 4.2)
 
@@ -77,19 +77,20 @@ def guardian_runtime_loop():
         is_secure = True
         if prediction == -1:
             consecutive_hits += 1
-            if consecutive_hits >= 3:
+            if consecutive_hits >= 3:  # 3-strike temporal filter matrix
                 is_secure = False
         else:
             consecutive_hits = 0
 
+        # FIXED: Explicitly indexing metrics array arrays down into single float variables
         shared_telemetry = {
             "is_secure": is_secure,
-            "em_voltage": metrics[0],
-            "current_ma": metrics[1],
-            "power_mw": metrics[2]
+            "em_voltage": float(metrics[0]),
+            "current_ma": float(metrics[1]),
+            "power_mw": float(metrics[2])
         }
 
-        # Print logs to the server terminal window
+        # Output logs into the server terminal window
         if current_tick % 20 == 0:
             status = "SECURE" if is_secure else "⚠️ TROJAN DETECTED ⚠️"
             print(
@@ -104,15 +105,13 @@ def guardian_runtime_loop():
 
 @app.route('/telemetry', methods=['GET'])
 def get_telemetry():
-    """Provides data packets to the Flutter app."""
-    response = jsonify(shared_telemetry)
-    response.headers.add('Access-Control-Allow-Origin', '*')
-    return response
+    """Provides real-time data packets to the Flutter app interface."""
+    return jsonify(shared_telemetry)
 
 
 @app.route('/trigger', methods=['POST'])
 def trigger_attack():
-    """Acts as the virtual trigger. Replaces the laptop serial cable code."""
+    """Acts as the virtual trigger system payload channel."""
     global is_trojan_active
     data = request.get_json() or {}
     command = data.get("command", "")
@@ -127,9 +126,17 @@ def trigger_attack():
 
 
 if __name__ == "__main__":
-    # Start ML Engine thread
+    from pyngrok import ngrok
+
+    # Start the hardware background monitoring loop thread
     monitor_thread = threading.Thread(
         target=guardian_runtime_loop, daemon=True)
     monitor_thread.start()
-    # Deploy API Server
+
+    # Open a public HTTP tunnel routing to local port 5000 to bypass firewalls
+    public_url = ngrok.connect(5000).public_url
+    print(f"\n🚀 NGROK TUNNEL DISTRIBUTED SUCCESSFULLY!")
+    print(f"🔗 COPY THIS PUBLIC SECURE URL FOR FLUTTER: {public_url}\n")
+
+    # Run the server node
     app.run(host='0.0.0.0', port=5000, debug=False, use_reloader=False)
