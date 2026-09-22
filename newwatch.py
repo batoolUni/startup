@@ -9,9 +9,9 @@ from sklearn.ensemble import IsolationForest
 from sklearn.preprocessing import StandardScaler
 from twilio.rest import Client
 
-# Initialize Flask API Server with Cross-Origin Resource Sharing (CORS) enabled
+# Initialize Flask API Server with Cross-Origin Resource Sharing (CORS) enabled globally
 app = Flask(__name__)
-CORS(app)
+CORS(app, resources={r"/*": {"origins": "*"}})
 
 # ==============================================================================
 # 1. SYSTEM PARAMETERS & CREDENTIALS CONFIGURATION
@@ -163,14 +163,12 @@ def guardian_runtime_loop():
             consecutive_hits += 1
             if consecutive_hits >= 3:  # 3-strike frame temporal filter
                 is_secure = False
-                # Dispatch Twilio on the exact transition hit frame
                 if consecutive_hits == 3:
                     dispatch_sms_threat_alert(
                         em_metric=metrics[0], power_metric=metrics[2])
         else:
             consecutive_hits = 0
 
-        # FIXED: Mapped explicit metric values array array indexing to resolve scaling errors
         v_em = float(metrics[0])
         i_ma = float(metrics[1])
         p_mw = float(metrics[2])
@@ -179,7 +177,7 @@ def guardian_runtime_loop():
             "is_secure": is_secure,
             "em_voltage": v_em,
             "current_ma": i_ma,
-            "power_mw": p_mw  # Scales up past 380+ mW perfectly during attacks
+            "power_mw": p_mw
         }
 
         if current_tick % 20 == 0:
@@ -199,8 +197,11 @@ def get_telemetry():
     return jsonify(shared_telemetry)
 
 
-@app.route('/trigger', methods=['POST'])
+@app.route('/trigger', methods=['POST', 'OPTIONS'])
 def trigger_attack():
+    if request.method == 'OPTIONS':
+        return '', 200
+
     global is_trojan_active
     data = request.get_json() or {}
     command = data.get("command", "")
@@ -217,13 +218,9 @@ def trigger_attack():
 
 
 if __name__ == "__main__":
-    from pyngrok import ngrok
     monitor_thread = threading.Thread(
         target=guardian_runtime_loop, daemon=True)
     monitor_thread.start()
 
-    public_url = ngrok.connect(5000).public_url
-    print(f"\n🚀 NGROK TUNNEL DISTRIBUTED SUCCESSFULLY!")
-    print(f"🔗 COPY THIS PUBLIC SECURE URL FOR FLUTTER: {public_url}\n")
-
+    # Run natively on local port 5000
     app.run(host='0.0.0.0', port=5000, debug=False, use_reloader=False)
